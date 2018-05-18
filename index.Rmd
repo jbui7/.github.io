@@ -1,0 +1,177 @@
+---
+title: 'Final Project: Analysis of the Premier League 2017-2018'
+author: "Jonathan Bui"
+date: "May 15, 2018"
+output: html_document
+---
+```{r intro}
+#The English Premier League is one of the most watched sports leagues in the world, soccer continues to be the most watched sporting event. According to world atlas Soccer has a following estimated at around 4 Billion, in comparison basketball only has an following of around 825 million. https://www.worldatlas.com/articles/what-are-the-most-popular-sports-in-the-world.html
+
+#The most entertaining league is the English Premier League where some of the best players in the world play for 6 mega teams.  Players such as Eden Hazard, Kevin DeBruyne, Sergio Aguero, Paul Pogba, Sadio Mane, and many more.
+
+#https://www.statista.com/statistics/469751/gross-gambling-yield-football-in-great-britain-off-course/
+#The betting industry makes approximately 500 Million pounds per year, it is an extremly lucrative industry. The US has just recently over turned the law that made sports betting illegal, now is the perfect time to discuss the potential benefits of analyzing data that people place bets on.
+
+#The numbers present in this csv file will provide a basis to which one can predict what individual awards a player can win and an estimate for where the team will place in the standings in the 2017-2018 season.
+
+#In this tutorial we will perform some statistical analysis on data from the 2017-2018 Premier League season based on player statistics per position. All players have their total points accounted for which is given based on the information from the official Premier League website.For example a forward gets 4 points for scoring and 3 points for assisting a goal. https://fantasy.premierleague.com/help/
+
+#The data is taken from the .csv file that has all player data, for the 2017-2018 season which is taken from the official Premier League website. https://fantasyoverlord.com/FPL/About
+
+# Introduction
+# Installing Libraries
+# Loading and Organizing Data
+# Exploratory Data Analysis
+# Machine Learning
+# Conclusion 
+
+```
+
+
+```{r Package_install}
+#Loading these Packages allow for us to call certain functions in R, these packages documentations can be found here:
+#https://www.rdocumentation.org/packages/tidyverse/versions/1.2.1
+#https://www.rdocumentation.org/packages/dplyr/versions/0.7.3
+#https://rstudio.github.io/leaflet/
+#https://cran.r-project.org/web/packages/broom/index.html
+#https://www.rdocumentation.org/packages/ISLR/versions/1.2
+#https://www.statmethods.net/advgraphs/ggplot2.html
+#https://cran.r-project.org/web/packages/rpart/index.html
+#http://www.cs.sfu.ca/CourseCentral/454/jpei/slides/R-Tree.pdf
+
+library(tidyverse)
+library(dplyr)
+library(leaflet)
+library(broom)
+library(ISLR)
+library(ggplot2)
+library(rpart)
+library(tree)
+```
+
+```{r organizing_data_and_operations}
+#This code reads the data from the a csv file using a built in method, the data that is read in will be stored into a data.frame. A data.frame is structured so data can be stored and read easily, these are called rectangular datasets. The entities of the data are stored in rows and the attribute values are stored in columns. Mutating data allows a dataset to be easier to work with.
+
+#I will then drop columns that are signficantly insignficant to the statistical analysis
+tab <- read_csv("/Users/Jonathan/Downloads/FantasyOverlordFPLDataWithForecasts.csv")
+
+goals_tab = select(tab,1,2,3,4,18,40)
+tab = select(tab,-5,-6,-11,-12,-15,-19,-21,-22,-23,-24,-25,-26,-30,-34,-36,-39,-41,-42,-44,-45,-46,-47,-48,-49,-50)
+
+#Sometimes data will be incomplete and thus it will need to be tidied. In our case some players do not have a first name, in order for this not to skew potential results we must replace it with a value.
+tab[is.na(tab)] <- "NoFirstName"
+tab 
+
+goals_tab[is.na(goals_tab)] <- "NoFirstName"
+#An important aspect of R is the use of factors for data analysis. In our current table PositionsList is represented by a character.
+class(tab$PositionsList)
+#However if we wanted to measure this column we would need to factor it into 4 categories for each position, the total number per position will then be shown by the summary function
+tab$PositionsList <- factor(tab$PositionsList)
+summary(tab$PositionsList)
+levels(tab$PositionsList)
+
+#Another operator for R is pipelines, they can be used to call multiple operations on a data.frame.
+
+#An example with one function
+goals_tab %>% sample_frac(.01)
+
+#An example with multiple functions that only select data that matches requirements given
+tab %>% filter(CleanSheets >= 8, CleanSheets <= 40) %>% select (FirstName, Surname, CleanSheets, Team)
+
+#In order to perform analysis it is important to split the data accordingly, we will pay more attention to the top 6 clubs in terms of performance and popularity: Chelsea, Liverpool, Manchester United, Manchester City, Tottenham Hotspurs, and Arsenal.  We will create a data frame for any goal scorers and any goal keeper who made a minimum of 20 saves.
+Most_goals_tab = subset(goals_tab, GoalsScored >=1)
+Most_goals_tab_top6 = subset(goals_tab,(Team == "ARS" | Team == "CHE" | Team == "MAN" | Team == "MCI" |Team == "TOT" |Team == "LIV") & (GoalsScored >= 1))
+GK_tab = subset(tab, Saves >= 20)
+Arsenal_tab = subset(tab, Team == "ARS")
+Chelsea_tab = subset(tab, Team == "CHE")
+```
+
+```{r exploratory_data_analysis}
+#In order to perform an Exploratory Data Analysis, the purpose of this is to see what we can conclude about the data specifically problems and properties. In terms of our data we will be trying to find the average goals per player for a season.  A bookie's most reliable bets during a match is whether X player will score in a game. We will analyze whether a person should make a bet on a player to score based on the number of goals that have already been scored.
+
+#One specific property is central tendency, this is know as the median and mean of the data. For example in our data set we have data.frame that contains every player that has scored at least 1 goal then use a R graphing method that displays the median.
+Most_goals_tab %>% 
+  ggplot(aes(x=GoalsScored)) +
+    geom_histogram(bins = 100) +
+      geom_vline(aes(xintercept = median(GoalsScored)), color = "blue")
+
+#We can also calculate the mean, this is the value that is the average of all the players who have scored a goal. The mean is higher than the median, hence we know that the data is skewed as there are more players who have scored 1 goal than 10 goals.
+Most_goals_tab %>%
+summarize(mean_goals = mean(GoalsScored), median_goals = median(GoalsScored))
+
+#In order to visualize the spread of data we use rank statistics, we will split the data into fourths for easy viewing.
+Most_goals_tab_df <- Most_goals_tab %>%
+  summarize(first=quantile(Most_goals_tab$GoalsScored, p=1/4),
+            third=quantile(Most_goals_tab$GoalsScored, p=3/4)) %>%
+  tidyr::gather(quartile, value)
+
+Most_goals_tab %>%
+  ggplot(aes(x=GoalsScored)) +
+    geom_histogram(bins=100) +
+    geom_vline(aes(xintercept=median(GoalsScored)), size=1.3, color="blue") +
+    geom_vline(aes(xintercept=value), data=Most_goals_tab_df, 
+               size=1,color="green", linetype=2)
+summary(Most_goals_tab$GoalsScored)
+#As we can see the top 25% of players have scored more than 5 goals, these players are most likely forwards and range from very good to elite players.  It is interesting to take note that the min only differs from the median by 1 goal where as the max differs by 30 goals. It is clear we have outliers.
+
+#Visually we can see the data to be right skewed as everything except the top 25% is on the left hand side of the graph, to mathematically prove the skew we find the differences between the first quarter and third quarter to the median.
+Most_goals_tab %>%
+  summarize(med_GoalsScored = median(GoalsScored), 
+            q1_GoalsScored = quantile(GoalsScored, 1/4),
+            q3_GoalsScored = quantile(GoalsScored, 3/4)) %>%
+  mutate(d1_GoalsScored = med_GoalsScored - q1_GoalsScored,
+         d2_GoalsScored = q3_GoalsScored - med_GoalsScored) %>%
+  select(d1_GoalsScored, d2_GoalsScored)
+#There is a difference of 2.00 towards the later 3/4 of the data, this is proof the data is right skewed.
+
+#In order to deal with outliers we must acknowledge that because we have so many outliers aka the top 25% spread between 5 and 32 goals we must use rank based estimates so our results are not inflated.
+outlier_df <- Most_goals_tab %>%
+  summarize(q1=quantile(GoalsScored, 1/4), q3=quantile(GoalsScored, 3/4), iqr=IQR(GoalsScored)) %>%
+  slice(rep(1, 2)) %>%
+  mutate(multiplier = c(1.5, 3)) %>%
+  mutate(lower_outlier_limit = q1 - multiplier * iqr) %>%
+  mutate(upper_outlier_limit = q3 + multiplier * iqr)
+
+Most_goals_tab %>%
+  ggplot(aes(x=GoalsScored)) +
+    geom_histogram(bins=100) +
+    geom_vline(aes(xintercept=lower_outlier_limit), data=outlier_df, color="green") +
+    geom_vline(aes(xintercept=upper_outlier_limit), data=outlier_df, color="red")
+#You may be wondering why the lower outlier limit is in the negatives, but this is simply becuase the data is so right skewed and many values are close to zero, negative values are quite common.
+
+#In regards to whether a person should make a bet on if a player would score they should look for how many goals have already been scored in a season. The mean goal's per player is 3.97 rounded up to 4, it is safe to conclude that if a player is not listed in the top 25% of goals scored and has not yet reached 4 goals it would be a safe bet to make.
+```
+
+```{r Machine_Learning}
+#Machine Learning is a common method for data analysis, it is important to note if a result is signficant. One of the main methods we use to perform machine learning is Linear Regression. This is a technique to model a relationship between a scalar variable and an independent variable. We will perform a simple linear regression between the # of saves a goalkeeper makes vs mintues played to see if there is a correlation between the two.
+
+GK_tab %>%
+  ggplot(aes(x=Saves, y=MinutesPlayed)) +
+    geom_point() + 
+    geom_smooth(method=lm) +
+    geom_text(aes(label=Surname))+
+    theme_minimal()
+
+tab_cor <- lm(MinutesPlayed~Saves, data=GK_tab)
+tab_cor
+ #The results from this linear regression model that 22 saves are made for every 731 minutes are played. However we want to check the precision of our linear regression, so the first thing we must do is calculate a standard error estimate and p value.
+
+save_stats <- tab_cor %>%
+  tidy() 
+save_stats
+
+#Thus we have found a statistically signficant relationship between minutes played and saves made.  On average a goal keeper makes .55 more saves per minute. (T = 9.13, P-Value = 1.945812e-09) However we can have an issue using linear regressions: there could be a non linear relationship betwen variables, correlated error, and non constant variance.
+
+#Classification model is another important part of machine learning,we will use a decision tree to show an outcome for players that match a formula and relate it to the mintues played. A decision tree is a graph that uses a binary method to illustrate every possible outcome of a decision. Our decision tree is built using recursive partitioning, the idea behind it is that every subset further from the node is more pure than the data in the node.
+
+tab$GoalsScored <- ifelse(tab$GoalsScored >= 1 & tab$PositionsList == "FWD","yes", "no")
+tree <- rpart(tab$GoalsScored~MinutesPlayed, data=tab)
+plot(tree)
+text(tree, pretty=0)
+```
+
+``` {r conclusion}
+#There are many factors that lead to goals and saves, and while we took a brief overview of the subject there are many more factors to consider.  This is evidence that statistics can play a role in determining how to place a smart bet and whether or not someone is more or less likely to score.
+
+#Thank you for reading my tutorial, as more statistics about soccer players are recorded we can look forward to more analysis being done.
+```
